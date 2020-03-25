@@ -1,0 +1,167 @@
+version: "3"
+services:
+  rabbitmq:
+    image: rabbitmq:3.8.3
+    container_name: rabbitmq
+    hostname: rabbitmq
+    ports:
+      - 127.0.0.1:5672:5672
+    networks:
+      - default
+  redis:
+    image: redis:latest
+    restart: always
+    container_name: redis
+    hostname: redis
+    command: redis-server --requirepass root
+    volumes:
+      - "./redis/data:/data:rw"
+    ports:
+      - 127.0.0.1:6379:6379
+    networks:
+      - default
+  memcached:
+    image: memcached:1.6.2
+    ports:
+      - 127.0.0.1:11211:11211
+    container_name: memcached
+    hostname: memcached
+    networks:
+      - default
+  mysql:
+    image: mysql:8.0.19
+    restart: always
+    container_name: mysql
+    hostname: mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+    volumes:
+      - ./mysql/data:/var/lib/mysql:rw
+      - ./mysql/conf/mysql.cnf:/etc/mysql/conf.d/mysql.cnf
+      - ./mysql/init:/docker-entrypoint-initdb.d/
+    ports:
+      - 127.0.0.1:3306:3306
+    networks:
+      - default
+  php-fpm:
+    build: ./php
+    restart: always
+    container_name: php-fpm
+    hostname: php-fpm
+    volumes:
+      - ../www:/var/www:rw
+    ports:
+      - 127.0.0.1:9000:9000
+    networks:
+      - default
+  nginx:
+    image: nginx:1.17.9
+    restart: always
+    container_name: nginx
+    hostname: nginx
+    volumes:
+      - ./nginx/conf:/etc/nginx/conf.d
+      - ./nginx/log:/var/log/nginx:rw
+      - ../www:/var/www:rw
+    ports:
+      - 127.0.0.1:8080:80
+      - 127.0.0.1:80:80
+      - 127.0.0.1:8360:8360
+    networks:
+      - default
+  es01:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.5.2
+    container_name: es01
+    hostname: es01
+    environment:
+      - node.name=es01
+      - cluster.name=es-docker-cluster
+      - discovery.seed_hosts=es02,es03
+      - cluster.initial_master_nodes=es01,es02,es03
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./elasticsearch/es01_data:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+    networks:
+      - default
+  es02:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.5.2
+    container_name: es02
+    hostname: es02
+    environment:
+      - node.name=es02
+      - cluster.name=es-docker-cluster
+      - discovery.seed_hosts=es01,es03
+      - cluster.initial_master_nodes=es01,es02,es03
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./elasticsearch/es02_data:/usr/share/elasticsearch/data
+    networks:
+      - default
+  es03:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.5.2
+    container_name: es03
+    hostname: es03
+    environment:
+      - node.name=es03
+      - cluster.name=es-docker-cluster
+      - discovery.seed_hosts=es01,es02
+      - cluster.initial_master_nodes=es01,es02,es03
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./elasticsearch/es03_data:/usr/share/elasticsearch/data
+    networks:
+      - default
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.5.2
+    container_name: kibana
+    hostname: kibana
+    environment:
+      - SERVER_NAME=kibana
+      - ELASTICSEARCH_HOSTS=http://es01:9200
+      - I18N_LOCALE=zh-CN
+      - XPACK_MONITORING_ENABLED=true
+    ports:
+      - 5601:5601
+    networks:
+      - default
+    depends_on:
+      - es01
+  logstash:
+    image: logstash:6.8.7
+    restart: always
+    container_name: logstash
+    hostname: logstash
+    volumes:
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./logstash/config/pipelines.yml:/usr/share/logstash/config/pipelines.yml:ro
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./nginx/log:/logs/nginx:ro
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+    environment:
+      LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+    networks:
+      - default
+    depends_on:
+      - es01
+networks:
+  default:
+    driver: bridge
